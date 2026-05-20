@@ -76,10 +76,31 @@ function buildPrompt(
   const energyList = (response.q7_energy || []).join(', ')
   const outcomesList = (response.q10_outcomes || []).join(', ')
 
-  const baseWhatsapp: Record<1 | 2 | 3, string> = {
-    1: `Hey ${name}! Anmol here. I've just gone through your answers properly — already building your first session around what you've shared. Will be in touch very soon to lock in a time.`,
-    2: `Hey ${name}! Really enjoyed our first session. I've been going through everything we covered and your next one is already taking shape. Will send a time shortly.`,
-    3: `Hey ${name}! You've moved fast. Session 3 is being built around exactly where you are now — this one's about making sure you leave with something that's fully yours. More soon.`,
+  const whatsappInstruction: Record<1 | 2 | 3, string> = {
+    1: `Write a short WhatsApp message from Anmol to ${name}. This is sent after they fill the form, before Session 1 has happened.
+
+Rules:
+- Open with "Hey ${name}! Anmol here."
+- In the next sentence, name something SPECIFIC they said in their form. Use their actual words or describe their actual situation — not "I read your answers" but something like "That bit about [their specific phrase or scenario]" or "The way you described [their Tuesday/their dread/their wildcard]". The most personal answers are Q3 (Tuesday), Q8 (dread), Q12 (wildcard) — pull from whichever is most vivid.
+- One sentence previewing what Session 1 will actually cover for THEM specifically. Not "building this around you" — be concrete. E.g. "Going to start by [specific thing], and I've already got [something specific] I think will land for you straight away."
+- One short closing line about locking in a time or being in touch soon.
+- No emojis unless they used them in their form. 3-5 sentences total. Write like a WhatsApp message, not an email. It should feel like it came from someone who read every word they wrote.`,
+
+    2: `Write a short WhatsApp message from Anmol to ${name}. Session 1 has happened and you have the transcript. This is sent before Session 2.
+
+Rules:
+- Open with "Hey ${name}!"
+- Reference something SPECIFIC that came up in Session 1 — a moment, something they said, something that clicked or surprised them or that you want to pick back up. Use their actual words from the transcript if possible.
+- One sentence about where Session 2 is going — what you're building on from last time, or what you're going to get into next. Make it feel like a natural next step, not a product pitch.
+- Short sign-off. No emojis unless naturally fits. 3-5 sentences. Write like a WhatsApp, not an email.`,
+
+    3: `Write a short WhatsApp message from Anmol to ${name}. Session 2 has happened. This is sent before Session 3, the final session.
+
+Rules:
+- Open with "Hey ${name}!"
+- Name something specific from Session 2 — where they've got to, what shifted, what they're doing now that they weren't before. Concrete, not vague.
+- One honest sentence about what Session 3 is for. No hype. Just what it actually is: making sure they leave with something that's genuinely theirs, that they can use without Anmol. Say it plainly.
+- Short sign-off. 3-5 sentences.`,
   }
 
   const jargonInstruction = confLevel === 'low'
@@ -164,7 +185,7 @@ Return a single JSON object matching this TypeScript interface EXACTLY — no ex
     "what_to_leave_with": "What ${name} should walk away from this session with — concrete, specific",
     "try_before_next": "One specific thing they can try before the next session, tied to their actual context"
   },
-  "whatsapp_message": "A warm, personal WhatsApp message from Anmol. Base template: '${baseWhatsapp[sessionNumber]}' — but personalise it by weaving in ONE specific detail from their form (a word they used, something they mentioned). Keep it short. No emojis unless naturally fits. Warm but not gushing."
+  "whatsapp_message": "${whatsappInstruction[sessionNumber]}"
 }
 
 Rules:
