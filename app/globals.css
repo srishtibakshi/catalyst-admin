@@ -715,6 +715,30 @@ html, body {
 .copy-btn:hover { background: rgba(37, 211, 102, .2); }
 .copy-btn.copied { color: #57A87D; border-color: #2D6A4F; background: rgba(45, 106, 79, .15); }
 
+.whatsapp-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.regen-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 14px;
+  background: rgba(255, 255, 255, .05);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: 'Instrument Sans', sans-serif;
+  transition: background .15s, color .15s;
+}
+.regen-btn:hover:not(:disabled) { background: rgba(255,255,255,.1); color: var(--text); }
+.regen-btn:disabled { opacity: .45; cursor: not-allowed; }
+
 /* Transcript block */
 .transcript-block {
   margin-top: 16px;

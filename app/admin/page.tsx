@@ -277,7 +277,9 @@ interface SessionBlockProps {
   response: IntakeResponse
   onTranscriptSubmit: (sessionNum: 1 | 2, transcript: string) => Promise<void>
   onGeneratePlan: () => Promise<void>
+  onRegenerateWhatsapp: () => Promise<void>
   isGenerating: boolean
+  regeneratingWhatsapp: boolean
   transcriptDraft: string
   onTranscriptDraftChange: (val: string) => void
 }
@@ -289,7 +291,9 @@ function SessionBlock({
   response,
   onTranscriptSubmit,
   onGeneratePlan,
+  onRegenerateWhatsapp,
   isGenerating,
+  regeneratingWhatsapp,
   transcriptDraft,
   onTranscriptDraftChange,
 }: SessionBlockProps) {
@@ -378,8 +382,21 @@ function SessionBlock({
           {session.whatsapp_message && (
             <div className="whatsapp-block">
               <div className="whatsapp-label">WhatsApp message</div>
-              <div className="whatsapp-text">{session.whatsapp_message}</div>
-              <CopyButton text={session.whatsapp_message} />
+              <div className="whatsapp-text">
+                {regeneratingWhatsapp
+                  ? <span style={{ opacity: 0.5, fontStyle: 'italic' }}>Rewriting...</span>
+                  : session.whatsapp_message}
+              </div>
+              <div className="whatsapp-actions">
+                <CopyButton text={session.whatsapp_message} />
+                <button
+                  className="regen-btn"
+                  onClick={onRegenerateWhatsapp}
+                  disabled={regeneratingWhatsapp}
+                >
+                  {regeneratingWhatsapp ? '...' : '↺ Regenerate'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -473,6 +490,9 @@ function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGe
   // Transcript drafts per session
   const [transcriptDrafts, setTranscriptDrafts] = useState<Record<number, string>>({})
 
+  // WhatsApp regeneration state per session
+  const [regeneratingWhatsapp, setRegeneratingWhatsapp] = useState<Record<number, boolean>>({})
+
   const session1 = sessions.find(s => s.session_number === 1)
   const session2 = sessions.find(s => s.session_number === 2)
   const session3 = sessions.find(s => s.session_number === 3)
@@ -513,6 +533,31 @@ function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGe
       }
     } finally {
       setGeneratingFor(null)
+    }
+  }
+
+  const handleRegenerateWhatsapp = async (sessionNum: 1 | 2 | 3) => {
+    const session = sessions.find(s => s.session_number === sessionNum)
+    if (!session?.whatsapp_message) return
+    setRegeneratingWhatsapp(prev => ({ ...prev, [sessionNum]: true }))
+    try {
+      const res = await fetch(`/api/sessions/${response.id}/regenerate-whatsapp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_number: sessionNum,
+          current_message: session.whatsapp_message,
+          response,
+        }),
+      })
+      if (res.ok) {
+        const { whatsapp_message } = await res.json() as { whatsapp_message: string }
+        onSessionsUpdate(sessions.map(s =>
+          s.session_number === sessionNum ? { ...s, whatsapp_message } : s
+        ))
+      }
+    } finally {
+      setRegeneratingWhatsapp(prev => ({ ...prev, [sessionNum]: false }))
     }
   }
 
@@ -564,7 +609,9 @@ function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGe
           response={response}
           onTranscriptSubmit={handleTranscriptSubmit}
           onGeneratePlan={handleGenerateS1}
+          onRegenerateWhatsapp={() => handleRegenerateWhatsapp(num)}
           isGenerating={generatingFor === response.id}
+          regeneratingWhatsapp={!!regeneratingWhatsapp[num]}
           transcriptDraft={transcriptDrafts[num] || ''}
           onTranscriptDraftChange={val => setTranscriptDrafts(prev => ({ ...prev, [num]: val }))}
         />
