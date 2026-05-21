@@ -642,6 +642,99 @@ function SessionDots({ sessions }: { sessions: Session[] }) {
   )
 }
 
+// ── New Prospect Panel ───────────────────────────────────
+
+function NewProspectPanel({ onClose }: { onClose: () => void }) {
+  const [name, setName] = useState('')
+  const [context, setContext] = useState('')
+  const [message, setMessage] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleGenerate = async () => {
+    if (!name.trim()) return
+    setGenerating(true)
+    setMessage('')
+    try {
+      const res = await fetch('/api/prospects/generate-outreach', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), context: context.trim() }),
+      })
+      if (res.ok) {
+        const data = await res.json() as { message: string }
+        setMessage(data.message)
+      }
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* fallback */ }
+  }
+
+  return (
+    <div className="prospect-overlay" onClick={onClose}>
+      <div className="prospect-panel" onClick={e => e.stopPropagation()}>
+        <div className="prospect-header">
+          <div className="prospect-title">New prospect</div>
+          <button className="prospect-close" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="prospect-body">
+          <div className="prospect-field">
+            <label className="prospect-label">Their name</label>
+            <input
+              className="prospect-input"
+              placeholder="e.g. Priya Sharma"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !generating && name.trim() && handleGenerate()}
+            />
+          </div>
+
+          <div className="prospect-field">
+            <label className="prospect-label">Context from Srishti</label>
+            <textarea
+              className="prospect-textarea"
+              placeholder="What do you know about them? Their job, how Srishti knows them, why they might be a good fit, anything relevant..."
+              value={context}
+              onChange={e => setContext(e.target.value)}
+              rows={4}
+            />
+          </div>
+
+          <button
+            className="generate-btn"
+            onClick={handleGenerate}
+            disabled={generating || !name.trim()}
+          >
+            {generating ? 'Generating...' : message ? '↺ Regenerate message' : 'Generate message'}
+          </button>
+
+          {message && (
+            <div className="prospect-message-block">
+              <div className="prospect-message-label">WhatsApp message to send</div>
+              <div className="prospect-message-text">{message}</div>
+              <button
+                className={`copy-btn${copied ? ' copied' : ''}`}
+                onClick={handleCopy}
+              >
+                {copied ? '✓ Copied' : 'Copy message'}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ───────────────────────────────────────
 
 export default function AdminDashboard() {
@@ -655,6 +748,8 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Record<string, 'answers' | 'journey'>>({})
   const [generatingFor, setGeneratingFor] = useState<string | null>(null)
   const [loadedSessions, setLoadedSessions] = useState<Set<string>>(new Set())
+
+  const [showNewProspect, setShowNewProspect] = useState(false)
 
   const router = useRouter()
   const supabase = createSupabaseBrowserClient()
@@ -752,11 +847,14 @@ export default function AdminDashboard() {
 
   return (
     <div className="admin-shell">
+      {showNewProspect && <NewProspectPanel onClose={() => setShowNewProspect(false)} />}
+
       {/* Header */}
       <div className="admin-header">
         <div className="admin-logo">Catalyst<span> AI</span></div>
         <div className="header-actions">
-          <button className="btn-sm accent" onClick={() => exportCSV(filtered)}>Export CSV</button>
+          <button className="btn-sm accent" onClick={() => setShowNewProspect(true)}>+ New prospect</button>
+          <button className="btn-sm" onClick={() => exportCSV(filtered)}>Export CSV</button>
           <button className="btn-sm" onClick={load}>↻</button>
           <button className="btn-sm" onClick={handleLogout}>Sign out</button>
         </div>

@@ -856,3 +856,115 @@ html, body {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* ── New Prospect Panel ──────────────────────────────────── */
+.prospect-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.6);
+  z-index: 100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+}
+.prospect-panel {
+  width: min(420px, 100vw);
+  height: 100dvh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.prospect-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.prospect-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.prospect-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: inherit;
+}
+.prospect-close:hover { color: var(--text); background: var(--surface2); }
+.prospect-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.prospect-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.prospect-label {
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.prospect-input {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--text);
+  font-family: 'Instrument Sans', sans-serif;
+  outline: none;
+  transition: border-color .15s;
+}
+.prospect-input:focus { border-color: var(--accent); }
+.prospect-textarea {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text);
+  font-family: 'Instrument Sans', sans-serif;
+  outline: none;
+  resize: vertical;
+  line-height: 1.6;
+  transition: border-color .15s;
+}
+.prospect-textarea:focus { border-color: var(--accent); }
+.prospect-message-block {
+  background: rgba(37, 211, 102, .06);
+  border: 1px solid rgba(37, 211, 102, .15);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.prospect-message-label {
+  font-size: 9px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #25D366;
+  font-weight: 600;
+}
+.prospect-message-text {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
