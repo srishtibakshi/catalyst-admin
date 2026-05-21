@@ -110,10 +110,24 @@ Rules:
     : 'Keep language accessible but do not over-explain.'
 
   const sessionFocus = sessionNumber === 1
-    ? 'First 30 min = discovery (deeper questions building on what they shared). Last 30 min = introduce 1-2 carefully chosen AI tools relevant to their actual life and context.'
+    ? `GENERALIST SESSION. Goal: show ${name} what AI actually looks like in a life like theirs, and leave them curious rather than overwhelmed.
+
+Before recommending any tools, search the web for: "best AI tools for [their job/context] 2025 reddit" and "AI tools [their industry or role] real world use". Look at what people actually say works, not what gets press coverage. Pull from Reddit threads, recent reviews, ProductHunt comments. Find tools that are genuinely useful for someone in their specific situation.
+
+Structure: First 30 min = discovery. Last 30 min = introduce 2-3 tools from your research that are the most natural entry points for this specific person. Do not default to ChatGPT and Notion. Look at what actually fits their Tuesday, their dread, their outcomes. Consider tools across the full landscape: voice tools like Wispr Flow, research tools like NotebookLM, writing tools, image tools, coding tools, productivity tools, specialist tools for their industry. Pick what fits them, not what's famous.`
+
     : sessionNumber === 2
-    ? 'Built entirely on the previous session transcript. What landed? What needs deepening? What new tools or practices fit where they actually are now?'
-    : 'Empowerment session. They must leave owning something they can use independently without Anmol. Focus on their capability, not more tools.'
+    ? `NUANCED SESSION. Built entirely on what happened in Session 1.
+
+Search the web for: deeper use cases of the specific tools ${name} engaged with in Session 1. Look for advanced workflows, Reddit threads about how real people use these tools day-to-day, common mistakes, and what people wish they'd known earlier. Find 1-2 new tools that complement what already landed.
+
+Structure: Go deeper on what resonated. Address what confused or didn't stick. Introduce 1-2 tools that fit where ${name} actually is now, not where they were when they filled the form. Build workflows, not just tool demos.`
+
+    : `BESPOKE SESSION. ${name} must leave owning something specific that is completely theirs.
+
+No new tools unless something critical is missing. Search the web for: how people build sustainable AI habits, what workflows stick long-term for [their context], what separates people who actually use AI daily from those who try and stop.
+
+Structure: Consolidate everything. Build one workflow or habit that is designed around ${name}'s actual Tuesday. They should be able to run it without Anmol. The session is not about showing more — it is about making what they have truly theirs.`
 
   const anxiousInstruction = anxious && sessionNumber === 1
     ? `IMPORTANT: This person is anxious or sceptical about AI. The first half of the discovery section must open by naming and gently addressing their specific worry before introducing any tools. Use their exact words from their form if possible.`
@@ -216,7 +230,8 @@ export async function generateSessionPlan(
   try {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 8000,
+      tools: [{ type: 'web_search_20260209' as const, name: 'web_search' }],
       messages: [
         {
           role: 'user',
@@ -225,10 +240,11 @@ export async function generateSessionPlan(
       ],
     })
 
-    const block = message.content[0]
-    if (block.type === 'text') {
-      rawText = block.text
-    }
+    // Collect all text blocks (web search results are incorporated inline by Claude)
+    rawText = message.content
+      .filter(b => b.type === 'text')
+      .map(b => (b as { type: 'text'; text: string }).text)
+      .join('')
   } catch (err) {
     console.error('Claude API error:', err)
     throw new Error('Failed to generate session plan from Claude')
