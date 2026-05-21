@@ -194,6 +194,7 @@ Rules:
 - If session ${sessionNumber} > 1 and transcript provided: explicitly reference what happened in the previous session
 - The discovery questions must feel like they were written FOR ${name}, not a generic intake
 - The demo scenario must use their actual context (their job, their specific situation)
+- NEVER use double dashes (--) anywhere in any field. Use a comma, a full stop, or rewrite the sentence instead.
 - Return ONLY valid JSON — no prose before or after`
 }
 
