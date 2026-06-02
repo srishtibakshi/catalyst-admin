@@ -1362,6 +1362,14 @@ html, body {
   margin-bottom: 12px;
   white-space: pre-wrap;
 }
+.whatsapp-link-preview {
+  margin-top: 10px;
+  font-size: 12px;
+  color: oklch(60% 0.1 152);
+  word-break: break-all;
+  opacity: .85;
+}
+
 .copy-btn {
   display: inline-flex;
   align-items: center;

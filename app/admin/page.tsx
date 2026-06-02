@@ -618,9 +618,12 @@ function SessionTabContent({
                 {regeneratingWhatsapp
                   ? <span style={{ opacity: 0.5, fontStyle: 'italic' }}>Rewriting...</span>
                   : session.whatsapp_message}
+                {!regeneratingWhatsapp && (
+                  <div className="whatsapp-link-preview">{CALENDLY_LINKS[sessionNum]}</div>
+                )}
               </div>
               <div className="whatsapp-actions">
-                <CopyButton text={session.whatsapp_message} />
+                <CopyButton text={`${session.whatsapp_message}\n\n${CALENDLY_LINKS[sessionNum]}`} label="Copy with link" />
                 <button className="regen-btn" onClick={onRegenerateWhatsapp} disabled={regeneratingWhatsapp}>
                   {regeneratingWhatsapp ? '...' : '↺ Regenerate'}
                 </button>
