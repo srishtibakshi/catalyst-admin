@@ -908,12 +908,31 @@ function NewProspectPanel({ onClose }: { onClose: () => void }) {
   )
 }
 
+// ── Row session dots ─────────────────────────────────────
+
+function RowDots({ sessions }: { sessions: Session[] }) {
+  const dotClass = (num: 1 | 2 | 3) => {
+    const s = sessions.find(s => s.session_number === num)
+    if (!s) return 'row-dot'
+    if (s.status === 'generating') return 'row-dot generating'
+    if (s.status === 'complete' || s.status === 'transcript_added') return 'row-dot complete'
+    if (s.status === 'plan_ready') return 'row-dot ready'
+    return 'row-dot'
+  }
+  return (
+    <div className="row-sessions">
+      {([1, 2, 3] as const).map(n => <div key={n} className={dotClass(n)} title={`S${n}`} />)}
+    </div>
+  )
+}
+
 // ── Main component ───────────────────────────────────────
 
 export default function AdminDashboard() {
   const [responses, setResponses] = useState<IntakeResponse[]>([])
   const [loading, setLoading] = useState(true)
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<string>('all')
 
   // Journey state
@@ -945,7 +964,6 @@ export default function AdminDashboard() {
     router.push('/login')
   }
 
-  // Register push notifications on mount
   useEffect(() => {
     async function registerPush() {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
@@ -953,7 +971,6 @@ export default function AdminDashboard() {
         const reg = await navigator.serviceWorker.ready
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
         if (!vapidKey) return
-
         let sub = await reg.pushManager.getSubscription()
         if (!sub) {
           sub = await reg.pushManager.subscribe({
@@ -961,20 +978,16 @@ export default function AdminDashboard() {
             applicationServerKey: urlBase64ToUint8Array(vapidKey),
           })
         }
-
         await fetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ subscription: sub }),
         })
-      } catch {
-        // Push not available or denied — silent fail
-      }
+      } catch { /* silent fail */ }
     }
     registerPush()
   }, [])
 
-  // Load sessions when a card is opened
   const loadSessions = useCallback(async (responseId: string) => {
     if (loadedSessions.has(responseId)) return
     try {
@@ -983,29 +996,22 @@ export default function AdminDashboard() {
         const data = await res.json() as Session[]
         setSessionsMap(prev => ({ ...prev, [responseId]: data }))
         setLoadedSessions(prev => new Set([...prev, responseId]))
-        // Default to journey tab if sessions exist
         if (data.length > 0) {
           setActiveTab(prev => ({ ...prev, [responseId]: 'journey' }))
         }
       }
-    } catch {
-      // silently fail
-    }
+    } catch { /* silent fail */ }
   }, [loadedSessions])
 
-  const handleCardClick = (id: string) => {
-    const newOpenId = openId === id ? null : id
-    setOpenId(newOpenId)
-    if (newOpenId) {
-      loadSessions(newOpenId)
-    }
+  const handleSelectClient = (id: string) => {
+    setSelectedId(id)
+    loadSessions(id)
   }
 
   const updateSessionsForResponse = (responseId: string, sessions: Session[]) => {
     setSessionsMap(prev => ({ ...prev, [responseId]: sessions }))
   }
 
-  // Stats
   const total = responses.length
   const cohorts = [...new Set(responses.map(r => r.cohort_tag).filter(Boolean))]
   const thisWeek = responses.filter(r => {
@@ -1014,143 +1020,181 @@ export default function AdminDashboard() {
     return (now.getTime() - d.getTime()) < 7 * 24 * 60 * 60 * 1000
   }).length
 
-  const filtered = filter === 'all'
-    ? responses
-    : responses.filter(r => r.cohort_tag === filter)
+  const filtered = responses
+    .filter(r => filter === 'all' || r.cohort_tag === filter)
+    .filter(r => !search || r.respondent_name.toLowerCase().includes(search.toLowerCase()) || r.respondent_email.toLowerCase().includes(search.toLowerCase()))
+
+  const selected = responses.find(r => r.id === selectedId) ?? null
+  const selectedSessions = selectedId ? (sessionsMap[selectedId] || []) : []
+  const selectedTab = selectedId ? (activeTab[selectedId] || 'answers') : 'answers'
 
   return (
     <div className="admin-shell">
       {showNewProspect && <NewProspectPanel onClose={() => setShowNewProspect(false)} />}
 
-      {/* Header */}
-      <div className="admin-header">
-        <div className="admin-logo">Catalyst<span> AI</span></div>
-        <div className="header-actions">
-          <button className="btn-sm accent" onClick={() => setShowNewProspect(true)}>+ New prospect</button>
-          <button className="btn-sm" onClick={() => exportCSV(filtered)}>Export CSV</button>
+      {/* Top bar — spans full width */}
+      <div className="main-topbar">
+        <div className="topbar-logo">Catalyst<span> AI</span></div>
+
+        <div className="topbar-center">
+          <input
+            className="topbar-search"
+            placeholder="Search clients..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
+        <div className="topbar-actions">
+          <div className="topbar-stats">
+            <div className="topbar-stat">
+              <span className="topbar-stat-val">{total}</span>
+              <span className="topbar-stat-label">clients</span>
+            </div>
+            <div className="topbar-stat">
+              <span className="topbar-stat-val">{thisWeek}</span>
+              <span className="topbar-stat-label">this week</span>
+            </div>
+          </div>
+          <button className="btn-sm accent" onClick={() => setShowNewProspect(true)}>+ Prospect</button>
+          <button className="btn-sm" onClick={() => exportCSV(filtered)}>Export</button>
           <button className="btn-sm" onClick={load}>↻</button>
           <button className="btn-sm" onClick={handleLogout}>Sign out</button>
         </div>
       </div>
 
-
-      {/* Stats */}
-      <div className="stats-row">
-        <div className="stat-card">
-          <div className="stat-val">{total}</div>
-          <div className="stat-label">Total responses</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-val">{thisWeek}</div>
-          <div className="stat-label">This week</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-val">{cohorts.length}</div>
-          <div className="stat-label">Cohort types</div>
-        </div>
-      </div>
-
-      {/* Filter */}
-      <div className="list-wrap">
-        <div className="list-header">
-          <div className="list-title">Responses</div>
+      {/* Client list panel */}
+      <div className="client-list-panel">
+        <div className="list-panel-header">
+          <div className="list-panel-meta">
+            <div className="list-panel-title">Clients</div>
+            <div className="list-panel-count">{filtered.length}</div>
+          </div>
           <select
+            className="list-panel-filter"
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            style={{
-              background: 'var(--surface)', color: 'var(--text)',
-              border: '1px solid var(--border)', borderRadius: '6px',
-              padding: '6px 10px', fontSize: '12px', fontFamily: 'inherit',
-              cursor: 'pointer',
-            }}
           >
             <option value="all">All cohorts</option>
             {cohorts.map(c => <option key={c!} value={c!}>{c}</option>)}
           </select>
         </div>
 
-        {loading && <div className="loading">Loading responses…</div>}
+        <div className="client-rows">
+          {loading && <div className="loading">Loading…</div>}
 
-        {!loading && filtered.length === 0 && (
-          <div className="empty-state">
-            <h3>No responses yet</h3>
-            <p>Share your form link and responses will appear here.</p>
-          </div>
-        )}
+          {!loading && filtered.length === 0 && (
+            <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+              {search ? 'No matches' : 'No responses yet'}
+            </div>
+          )}
 
-        {filtered.map(r => {
-          const isOpen = openId === r.id
-          const sessions = sessionsMap[r.id] || []
-          const tab = activeTab[r.id] || 'answers'
-
-          return (
-            <div
-              key={r.id}
-              className={`response-card${isOpen ? ' open' : ''}`}
-              onClick={() => handleCardClick(r.id)}
-            >
-              <div className="card-row">
-                <div className="card-avatar">{initials(r.respondent_name)}</div>
-                <div className="card-main">
-                  <div className="card-name">{r.respondent_name}</div>
-                  <div className="card-email">{r.respondent_email}</div>
-                  <SessionDots sessions={sessions} />
-                </div>
-                <div className="card-right">
-                  <div className="card-date">{fmtDate(r.submitted_at)}</div>
-                  {r.cohort_tag && (
-                    <span className={`cohort-badge ${cohortClass(r.cohort_tag)}`}>
-                      {r.cohort_tag}
-                    </span>
-                  )}
+          {filtered.map(r => {
+            const sessions = sessionsMap[r.id] || []
+            return (
+              <div
+                key={r.id}
+                className={`client-row${selectedId === r.id ? ' selected' : ''}`}
+                onClick={() => handleSelectClient(r.id)}
+              >
+                <div className="row-avatar">{initials(r.respondent_name)}</div>
+                <div className="row-body">
+                  <div className="row-name">{r.respondent_name}</div>
+                  <div className="row-sub">
+                    <span className="row-date">{fmtDate(r.submitted_at)}</span>
+                    {r.cohort_tag && (
+                      <span className={`cohort-badge ${cohortClass(r.cohort_tag)}`} style={{ fontSize: 9, padding: '1px 5px' }}>
+                        {r.cohort_tag}
+                      </span>
+                    )}
+                  </div>
+                  <RowDots sessions={sessions} />
                 </div>
               </div>
+            )
+          })}
+        </div>
+      </div>
 
-              {/* Detail panel */}
-              {isOpen && (
-                <div className="detail-panel" onClick={e => e.stopPropagation()}>
-                  {/* Tabs */}
-                  <div className="card-tabs">
-                    <button
-                      className={`card-tab${tab === 'answers' ? ' active' : ''}`}
-                      onClick={() => setActiveTab(prev => ({ ...prev, [r.id]: 'answers' }))}
-                    >
-                      Answers
-                    </button>
-                    <button
-                      className={`card-tab${tab === 'journey' ? ' active' : ''}`}
-                      onClick={() => setActiveTab(prev => ({ ...prev, [r.id]: 'journey' }))}
-                    >
-                      Journey
-                    </button>
-                    <button
-                      className={`card-tab${tab === 'chat' ? ' active' : ''}`}
-                      onClick={() => setActiveTab(prev => ({ ...prev, [r.id]: 'chat' }))}
-                    >
-                      Chat
-                    </button>
-                  </div>
-
-                  {tab === 'answers' && <AnswersTab r={r} />}
-
-                  {tab === 'journey' && (
-                    <JourneyTab
-                      response={r}
-                      sessions={sessions}
-                      onSessionsUpdate={updated => updateSessionsForResponse(r.id, updated)}
-                      generatingFor={generatingFor}
-                      setGeneratingFor={setGeneratingFor}
-                    />
+      {/* Detail area */}
+      <div className="detail-area">
+        {!selected ? (
+          <div className="detail-empty">
+            <div className="detail-empty-icon">←</div>
+            <div className="detail-empty-title">Select a client</div>
+            <div className="detail-empty-sub">Choose someone from the list to view their intake answers, session journey, and AI chat.</div>
+          </div>
+        ) : (
+          <>
+            {/* Detail header */}
+            <div className="detail-header">
+              <div className="detail-avatar">{initials(selected.respondent_name)}</div>
+              <div className="detail-identity">
+                <div className="detail-name">{selected.respondent_name}</div>
+                <div className="detail-email">{selected.respondent_email}</div>
+                <div className="detail-meta">
+                  {selected.cohort_tag && (
+                    <span className={`cohort-badge ${cohortClass(selected.cohort_tag)}`}>
+                      {selected.cohort_tag}
+                    </span>
                   )}
-
-                  {tab === 'chat' && (
-                    <ChatTab response={r} sessions={sessions} />
+                  {selected.q6_confidence != null && (
+                    <div className="detail-conf">
+                      {[1,2,3,4,5].map(n => (
+                        <div key={n} className={`detail-conf-pip${n <= (selected.q6_confidence ?? 0) ? ' filled' : ''}`} />
+                      ))}
+                      <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>
+                        {selected.q6_confidence}/5 confidence
+                      </span>
+                    </div>
                   )}
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtDate(selected.submitted_at)}</span>
                 </div>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="detail-tabs">
+              <button
+                className={`detail-tab${selectedTab === 'answers' ? ' active' : ''}`}
+                onClick={() => setActiveTab(prev => ({ ...prev, [selected.id]: 'answers' }))}
+              >
+                Intake answers
+              </button>
+              <button
+                className={`detail-tab${selectedTab === 'journey' ? ' active' : ''}`}
+                onClick={() => setActiveTab(prev => ({ ...prev, [selected.id]: 'journey' }))}
+              >
+                Journey
+              </button>
+              <button
+                className={`detail-tab${selectedTab === 'chat' ? ' active' : ''}`}
+                onClick={() => setActiveTab(prev => ({ ...prev, [selected.id]: 'chat' }))}
+              >
+                Chat
+              </button>
+            </div>
+
+            {/* Tab content */}
+            <div className="detail-content">
+              {selectedTab === 'answers' && <AnswersTab r={selected} />}
+
+              {selectedTab === 'journey' && (
+                <JourneyTab
+                  response={selected}
+                  sessions={selectedSessions}
+                  onSessionsUpdate={updated => updateSessionsForResponse(selected.id, updated)}
+                  generatingFor={generatingFor}
+                  setGeneratingFor={setGeneratingFor}
+                />
+              )}
+
+              {selectedTab === 'chat' && (
+                <ChatTab response={selected} sessions={selectedSessions} />
               )}
             </div>
-          )
-        })}
+          </>
+        )}
       </div>
     </div>
   )
