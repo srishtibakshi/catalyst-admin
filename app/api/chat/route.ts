@@ -18,7 +18,6 @@ ${clientContext}
 - Research and recommend AI tools tailored to their exact situation, role, and Tuesday
 - Help rewrite or improve WhatsApp messages, discovery questions, session plans
 - Suggest demo scenarios using their actual context (their job, their dread, their goals)
-- Do live web research when asked about specific tools or workflows
 - Be direct and practical — Anmol is a busy operator, not a student
 
 Always refer to the client by their first name. Always ground your answers in what they actually wrote in their form — quote their words back when relevant.`
@@ -32,7 +31,6 @@ Always refer to the client by their first name. Always ground your answers in wh
           model: 'claude-sonnet-4-6',
           max_tokens: 4000,
           system: systemPrompt,
-          tools: [{ type: 'web_search_20260209' as const, name: 'web_search' }],
           messages,
           stream: true,
         })

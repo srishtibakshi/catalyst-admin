@@ -695,8 +695,14 @@ const QUICK_PROMPTS = [
   'What are their biggest AI opportunities?',
 ]
 
-function ChatTab({ response, sessions }: { response: IntakeResponse; sessions: Session[] }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+interface ChatTabProps {
+  response: IntakeResponse
+  sessions: Session[]
+  messages: ChatMessage[]
+  onMessagesChange: (msgs: ChatMessage[]) => void
+}
+
+function ChatTab({ response, sessions, messages, onMessagesChange }: ChatTabProps) {
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -712,12 +718,12 @@ function ChatTab({ response, sessions }: { response: IntakeResponse; sessions: S
 
     const userMsg: ChatMessage = { role: 'user', content: text.trim() }
     const newMessages = [...messages, userMsg]
-    setMessages(newMessages)
+    onMessagesChange(newMessages)
     setInput('')
     setStreaming(true)
 
     const assistantMsg: ChatMessage = { role: 'assistant', content: '' }
-    setMessages(prev => [...prev, assistantMsg])
+    onMessagesChange([...newMessages, assistantMsg])
 
     try {
       const res = await fetch('/api/chat', {
@@ -732,26 +738,16 @@ function ChatTab({ response, sessions }: { response: IntakeResponse; sessions: S
       if (!res.body) return
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
+      let accumulated = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        const chunk = decoder.decode(value)
-        setMessages(prev => {
-          const updated = [...prev]
-          updated[updated.length - 1] = {
-            ...updated[updated.length - 1],
-            content: updated[updated.length - 1].content + chunk,
-          }
-          return updated
-        })
+        accumulated += decoder.decode(value)
+        onMessagesChange([...newMessages, { role: 'assistant', content: accumulated }])
       }
     } catch {
-      setMessages(prev => {
-        const updated = [...prev]
-        updated[updated.length - 1] = { role: 'assistant', content: 'Something went wrong. Try again.' }
-        return updated
-      })
+      onMessagesChange([...newMessages, { role: 'assistant', content: 'Something went wrong. Try again.' }])
     } finally {
       setStreaming(false)
     }
@@ -941,6 +937,7 @@ export default function AdminDashboard() {
   const [generatingFor, setGeneratingFor] = useState<string | null>(null)
   const [loadedSessions, setLoadedSessions] = useState<Set<string>>(new Set())
 
+  const [chatMap, setChatMap] = useState<Record<string, ChatMessage[]>>({})
   const [showNewProspect, setShowNewProspect] = useState(false)
 
   const router = useRouter()
@@ -1190,7 +1187,12 @@ export default function AdminDashboard() {
               )}
 
               {selectedTab === 'chat' && (
-                <ChatTab response={selected} sessions={selectedSessions} />
+                <ChatTab
+                  response={selected}
+                  sessions={selectedSessions}
+                  messages={chatMap[selected.id] || []}
+                  onMessagesChange={msgs => setChatMap(prev => ({ ...prev, [selected.id]: msgs }))}
+                />
               )}
             </div>
           </>
