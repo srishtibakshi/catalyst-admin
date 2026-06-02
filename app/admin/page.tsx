@@ -5,6 +5,13 @@ import { createSupabaseBrowserClient } from '@/lib/supabase-browser'
 import { useRouter } from 'next/navigation'
 import type { SessionPlan } from '@/lib/session-generator'
 
+// ── Chat types ────────────────────────────────────────────
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 // ── Types ────────────────────────────────────────────────
 
 interface IntakeResponse {
@@ -642,6 +649,172 @@ function SessionDots({ sessions }: { sessions: Session[] }) {
   )
 }
 
+// ── Chat Tab ─────────────────────────────────────────────
+
+function buildClientContext(response: IntakeResponse, sessions: Session[]): string {
+  const plan1 = parsePlan(sessions.find(s => s.session_number === 1)?.plan || null)
+  const plan2 = parsePlan(sessions.find(s => s.session_number === 2)?.plan || null)
+  const plan3 = parsePlan(sessions.find(s => s.session_number === 3)?.plan || null)
+  const transcript1 = sessions.find(s => s.session_number === 1)?.transcript
+  const transcript2 = sessions.find(s => s.session_number === 2)?.transcript
+  const notes = sessions.find(s => s.session_number === 1)?.srishti_notes
+
+  return `### Client: ${response.respondent_name}
+Email: ${response.respondent_email}
+Cohort: ${response.cohort_tag || 'unknown'}
+Submitted: ${response.submitted_at}
+
+### Intake Form Answers
+- What they do: ${response.q1_intro || '—'}
+- Their world: ${response.q2_world || '—'}
+- Typical Tuesday: ${response.q3_tuesday || '—'}
+- First reaction to AI: ${response.q4_ai_reaction || '—'}
+- AI experience: ${response.q5_ai_experience || '—'}
+- Confidence (1-5): ${response.q6_confidence ?? '—'}
+- Where energy goes: ${(response.q7_energy || []).join(', ') || '—'}
+- What they dread: ${response.q8_dread || '—'}
+- 2 free hours: ${response.q9_two_hours || '—'}
+- Desired outcomes: ${(response.q10_outcomes || []).join(', ') || '—'}
+- AI worries: ${response.q11_worries || '—'}
+- Wildcard: ${response.q12_wildcard || '—'}
+
+${notes ? `### Anmol's Notes\n${notes}\n` : ''}
+${plan1 ? `### Session 1 Plan (Generated)\nArchetype: ${plan1.archetype}\nOverview: ${plan1.session_overview}\nTools: ${plan1.knowledge.tools.map(t => t.name).join(', ')}\n` : ''}
+${transcript1 ? `### Session 1 Transcript\n${transcript1}\n` : ''}
+${plan2 ? `### Session 2 Plan (Generated)\nArchetype: ${plan2.archetype}\nOverview: ${plan2.session_overview}\nTools: ${plan2.knowledge.tools.map(t => t.name).join(', ')}\n` : ''}
+${transcript2 ? `### Session 2 Transcript\n${transcript2}\n` : ''}
+${plan3 ? `### Session 3 Plan (Generated)\nOverview: ${plan3.session_overview}\n` : ''}`
+}
+
+const QUICK_PROMPTS = [
+  'What tools should I demo in Session 1?',
+  'Research the best AI tools for their role',
+  'Rewrite the WhatsApp message',
+  'What should I listen for in discovery?',
+  'Build a custom workflow for their Tuesday',
+  'What are their biggest AI opportunities?',
+]
+
+function ChatTab({ response, sessions }: { response: IntakeResponse; sessions: Session[] }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [streaming, setStreaming] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const firstName = response.respondent_name.trim().split(' ')[0]
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, streaming])
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || streaming) return
+
+    const userMsg: ChatMessage = { role: 'user', content: text.trim() }
+    const newMessages = [...messages, userMsg]
+    setMessages(newMessages)
+    setInput('')
+    setStreaming(true)
+
+    const assistantMsg: ChatMessage = { role: 'assistant', content: '' }
+    setMessages(prev => [...prev, assistantMsg])
+
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: newMessages,
+          clientContext: buildClientContext(response, sessions),
+        }),
+      })
+
+      if (!res.body) return
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const chunk = decoder.decode(value)
+        setMessages(prev => {
+          const updated = [...prev]
+          updated[updated.length - 1] = {
+            ...updated[updated.length - 1],
+            content: updated[updated.length - 1].content + chunk,
+          }
+          return updated
+        })
+      }
+    } catch {
+      setMessages(prev => {
+        const updated = [...prev]
+        updated[updated.length - 1] = { role: 'assistant', content: 'Something went wrong. Try again.' }
+        return updated
+      })
+    } finally {
+      setStreaming(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage(input)
+    }
+  }
+
+  return (
+    <div className="chat-wrap">
+      {messages.length === 0 && (
+        <div className="chat-empty">
+          <div className="chat-empty-title">Plan {firstName}&apos;s journey</div>
+          <div className="chat-empty-sub">Ask anything about {firstName} — tools, research, session planning, WhatsApp messages.</div>
+          <div className="chat-quick-prompts">
+            {QUICK_PROMPTS.map(p => (
+              <button key={p} className="quick-prompt" onClick={() => sendMessage(p)}>
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {messages.length > 0 && (
+        <div className="chat-messages">
+          {messages.map((msg, i) => (
+            <div key={i} className={`chat-msg chat-msg-${msg.role}`}>
+              <div className="chat-msg-role">{msg.role === 'user' ? 'You' : 'Claude'}</div>
+              <div className="chat-msg-content">{msg.content}{streaming && i === messages.length - 1 && msg.role === 'assistant' && <span className="chat-cursor" />}</div>
+            </div>
+          ))}
+          <div ref={bottomRef} />
+        </div>
+      )}
+
+      <div className="chat-input-row">
+        <textarea
+          ref={textareaRef}
+          className="chat-input"
+          placeholder={`Ask about ${firstName}...`}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          rows={2}
+          disabled={streaming}
+        />
+        <button
+          className="chat-send"
+          onClick={() => sendMessage(input)}
+          disabled={!input.trim() || streaming}
+        >
+          {streaming ? '…' : '↑'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── New Prospect Panel ───────────────────────────────────
 
 function NewProspectPanel({ onClose }: { onClose: () => void }) {
@@ -745,7 +918,7 @@ export default function AdminDashboard() {
 
   // Journey state
   const [sessionsMap, setSessionsMap] = useState<Record<string, Session[]>>({})
-  const [activeTab, setActiveTab] = useState<Record<string, 'answers' | 'journey'>>({})
+  const [activeTab, setActiveTab] = useState<Record<string, 'answers' | 'journey' | 'chat'>>({})
   const [generatingFor, setGeneratingFor] = useState<string | null>(null)
   const [loadedSessions, setLoadedSessions] = useState<Set<string>>(new Set())
 
@@ -950,6 +1123,12 @@ export default function AdminDashboard() {
                     >
                       Journey
                     </button>
+                    <button
+                      className={`card-tab${tab === 'chat' ? ' active' : ''}`}
+                      onClick={() => setActiveTab(prev => ({ ...prev, [r.id]: 'chat' }))}
+                    >
+                      Chat
+                    </button>
                   </div>
 
                   {tab === 'answers' && <AnswersTab r={r} />}
@@ -962,6 +1141,10 @@ export default function AdminDashboard() {
                       generatingFor={generatingFor}
                       setGeneratingFor={setGeneratingFor}
                     />
+                  )}
+
+                  {tab === 'chat' && (
+                    <ChatTab response={r} sessions={sessions} />
                   )}
                 </div>
               )}
