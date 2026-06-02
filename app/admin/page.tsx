@@ -481,6 +481,291 @@ function SessionBlock({
   )
 }
 
+// ── Journey checkpoints ──────────────────────────────────
+
+interface Checkpoint {
+  label: string
+  done: boolean
+  active: boolean
+}
+
+function getSessionCheckpoints(
+  sessionNum: 1 | 2 | 3,
+  session: Session | undefined,
+  nextSession: Session | undefined
+): Checkpoint[] {
+  const planReady = !!session && session.status !== 'generating'
+  const hasTranscript = !!session?.transcript
+  const nextGenerated = !!nextSession
+
+  if (sessionNum === 3) {
+    return [
+      { label: 'Plan ready', done: planReady, active: !planReady },
+      { label: 'Session delivered', done: hasTranscript, active: planReady && !hasTranscript },
+      { label: 'Journey complete', done: session?.status === 'complete', active: hasTranscript && session?.status !== 'complete' },
+    ]
+  }
+
+  return [
+    { label: 'Plan ready', done: planReady, active: !planReady },
+    { label: 'Session delivered', done: hasTranscript, active: planReady && !hasTranscript },
+    { label: 'Transcript logged', done: hasTranscript, active: false },
+    { label: `Session ${sessionNum + 1} generated`, done: nextGenerated, active: hasTranscript && !nextGenerated },
+  ]
+}
+
+function CheckpointBar({ checkpoints }: { checkpoints: Checkpoint[] }) {
+  return (
+    <div className="checkpoint-bar">
+      {checkpoints.map((cp, i) => (
+        <div key={i} className={`checkpoint${cp.done ? ' done' : cp.active ? ' active' : ''}`}>
+          <div className="checkpoint-icon">
+            {cp.done ? '✓' : <span className="checkpoint-dot" />}
+          </div>
+          <div className="checkpoint-label">{cp.label}</div>
+          {i < checkpoints.length - 1 && <div className="checkpoint-line" />}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Session tab content ───────────────────────────────────
+
+interface SessionTabContentProps {
+  sessionNum: 1 | 2 | 3
+  session: Session | undefined
+  nextSession: Session | undefined
+  response: IntakeResponse
+  isLocked: boolean
+  isGenerating: boolean
+  regeneratingWhatsapp: boolean
+  transcriptDraft: string
+  onTranscriptDraftChange: (val: string) => void
+  onGeneratePlan: () => Promise<void>
+  onTranscriptSubmit: (sessionNum: 1 | 2, transcript: string) => Promise<void>
+  onRegenerateWhatsapp: () => Promise<void>
+}
+
+function SessionTabContent({
+  sessionNum, session, nextSession, response, isLocked, isGenerating,
+  regeneratingWhatsapp, transcriptDraft, onTranscriptDraftChange,
+  onGeneratePlan, onTranscriptSubmit, onRegenerateWhatsapp,
+}: SessionTabContentProps) {
+  const [submittingTranscript, setSubmittingTranscript] = useState(false)
+  const plan = parsePlan(session?.plan || null)
+  const checkpoints = getSessionCheckpoints(sessionNum, session, nextSession)
+  const canAddTranscript = !!session && session.status !== 'generating' && sessionNum < 3
+
+  const handleSubmit = async () => {
+    if (!transcriptDraft.trim()) return
+    setSubmittingTranscript(true)
+    try {
+      await onTranscriptSubmit(sessionNum as 1 | 2, transcriptDraft)
+    } finally {
+      setSubmittingTranscript(false)
+    }
+  }
+
+  if (isLocked) {
+    return (
+      <div className="session-tab-locked">
+        <div className="locked-icon">◎</div>
+        <div className="locked-title">Session {sessionNum} locked</div>
+        <div className="locked-sub">
+          Submit the Session {sessionNum - 1} transcript to generate this plan.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="session-tab-content">
+      <CheckpointBar checkpoints={checkpoints} />
+
+      {/* Generating */}
+      {isGenerating && !session && (
+        <div className="generating-pulse" style={{ padding: '24px 0' }}>
+          <div className="dots">
+            <div className="dot" /><div className="dot" /><div className="dot" />
+          </div>
+          <span>Generating plan with Claude...</span>
+        </div>
+      )}
+
+      {/* No plan yet — S1 only */}
+      {!session && !isGenerating && sessionNum === 1 && (
+        <div className="generate-plan-cta">
+          <p className="generate-plan-hint">
+            Session 1 plan hasn&apos;t been generated yet. This normally happens automatically on form submission.
+          </p>
+          <button className="generate-btn" onClick={onGeneratePlan}>
+            Generate Session 1 Plan
+          </button>
+        </div>
+      )}
+
+      {/* Plan content */}
+      {session && plan && (
+        <div className="session-plan-wrap">
+          <PlanDisplay plan={plan} />
+
+          {/* WhatsApp block */}
+          {session.whatsapp_message && (
+            <div className="whatsapp-block">
+              <div className="whatsapp-label">WhatsApp message</div>
+              <div className="whatsapp-text">
+                {regeneratingWhatsapp
+                  ? <span style={{ opacity: 0.5, fontStyle: 'italic' }}>Rewriting...</span>
+                  : session.whatsapp_message}
+              </div>
+              <div className="whatsapp-actions">
+                <CopyButton text={session.whatsapp_message} />
+                <button className="regen-btn" onClick={onRegenerateWhatsapp} disabled={regeneratingWhatsapp}>
+                  {regeneratingWhatsapp ? '...' : '↺ Regenerate'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* No parseable plan */}
+      {session && !plan && !isGenerating && (
+        <div style={{ padding: '20px 0', fontSize: 13, color: 'var(--muted)' }}>
+          Plan data could not be parsed. Status: {session.status}
+        </div>
+      )}
+
+      {/* Transcript section — always at the bottom if applicable */}
+      {canAddTranscript && (
+        <div className="transcript-block">
+          <div className="transcript-label">
+            Session {sessionNum} transcript
+          </div>
+          {session?.transcript ? (
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--success)', marginBottom: 8 }}>
+                ✓ Transcript saved — Session {sessionNum + 1} generated
+              </div>
+              <details>
+                <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
+                  View transcript
+                </summary>
+                <div style={{
+                  marginTop: 8, fontSize: 12, color: 'var(--muted)', whiteSpace: 'pre-wrap',
+                  lineHeight: 1.6, maxHeight: 200, overflow: 'auto',
+                  background: 'var(--surface2)', padding: 10, borderRadius: 6,
+                }}>
+                  {session.transcript}
+                </div>
+              </details>
+            </div>
+          ) : (
+            <>
+              <textarea
+                className="transcript-area"
+                placeholder={`Paste the Session ${sessionNum} transcript after the call...`}
+                value={transcriptDraft}
+                onChange={e => onTranscriptDraftChange(e.target.value)}
+              />
+              <button
+                className="generate-btn"
+                onClick={handleSubmit}
+                disabled={submittingTranscript || !transcriptDraft.trim()}
+              >
+                {submittingTranscript
+                  ? 'Saving & generating next plan...'
+                  : `Submit transcript → unlock Session ${sessionNum + 1}`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Archetype tab ─────────────────────────────────────────
+
+function ArchetypeTab({
+  response, sessions, notes, notesSaving, onNotesChange,
+}: {
+  response: IntakeResponse
+  sessions: Session[]
+  notes: string
+  notesSaving: boolean
+  onNotesChange: (val: string) => void
+}) {
+  const session1 = sessions.find(s => s.session_number === 1)
+  const session2 = sessions.find(s => s.session_number === 2)
+  const session3 = sessions.find(s => s.session_number === 3)
+
+  const archetype = session1?.archetype || parsePlan(session1?.plan || null)?.archetype || null
+
+  const stageLabel = (() => {
+    if (session3?.transcript) return 'Journey complete'
+    if (session3) return 'Session 3 in progress'
+    if (session2?.transcript) return 'Awaiting Session 3 plan'
+    if (session2) return 'Session 2 in progress'
+    if (session1?.transcript) return 'Awaiting Session 2 plan'
+    if (session1) return 'Session 1 in progress'
+    return 'Not started'
+  })()
+
+  const completedCount = [session1, session2, session3].filter(s => !!s?.transcript).length
+
+  return (
+    <div className="archetype-tab-content">
+      {/* Stage indicator */}
+      <div className="journey-stage">
+        <div className="journey-stage-pips">
+          {[1, 2, 3].map(n => {
+            const s = [session1, session2, session3][n - 1]
+            const isDone = !!s?.transcript
+            const isActive = !!s && !s.transcript
+            return (
+              <div key={n} className={`journey-stage-pip${isDone ? ' done' : isActive ? ' active' : ''}`}>
+                {isDone ? '✓' : n}
+              </div>
+            )
+          })}
+        </div>
+        <div className="journey-stage-label">{stageLabel}</div>
+        {completedCount > 0 && (
+          <div className="journey-stage-count">{completedCount} of 3 sessions complete</div>
+        )}
+      </div>
+
+      {/* Archetype */}
+      {archetype ? (
+        <div className="archetype-block">
+          <div className="archetype-label">Who they are</div>
+          <div className="archetype-text">{archetype}</div>
+        </div>
+      ) : (
+        <div className="archetype-placeholder">
+          Archetype appears once Session 1 plan is generated.
+        </div>
+      )}
+
+      {/* Notes */}
+      <div className="notes-block">
+        <div className="notes-label">Your context</div>
+        <textarea
+          className="notes-textarea"
+          placeholder="Things the form didn't capture — impressions from discovery, context from Srishti, relevant background..."
+          value={notes}
+          onChange={e => onNotesChange(e.target.value)}
+        />
+        {notesSaving && <div className="notes-saving">Saving...</div>}
+      </div>
+    </div>
+  )
+}
+
+// ── Journey tab (outer shell with inner tabs) ─────────────
+
 interface JourneyTabProps {
   response: IntakeResponse
   sessions: Session[]
@@ -489,25 +774,25 @@ interface JourneyTabProps {
   setGeneratingFor: (id: string | null) => void
 }
 
+type JourneyInnerTab = 'archetype' | 's1' | 's2' | 's3'
+
 function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGeneratingFor }: JourneyTabProps) {
+  const [innerTab, setInnerTab] = useState<JourneyInnerTab>('archetype')
   const [notes, setNotes] = useState(sessions.find(s => s.session_number === 1)?.srishti_notes || '')
   const [notesSaving, setNotesSaving] = useState(false)
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Transcript drafts per session
   const [transcriptDrafts, setTranscriptDrafts] = useState<Record<number, string>>({})
-
-  // WhatsApp regeneration state per session
   const [regeneratingWhatsapp, setRegeneratingWhatsapp] = useState<Record<number, boolean>>({})
 
   const session1 = sessions.find(s => s.session_number === 1)
   const session2 = sessions.find(s => s.session_number === 2)
   const session3 = sessions.find(s => s.session_number === 3)
 
-  const archetype =
-    session1?.archetype ||
-    parsePlan(session1?.plan || null)?.archetype ||
-    null
+  // Sync notes when sessions prop updates (e.g. after chat-to-journey update)
+  useEffect(() => {
+    const n = sessions.find(s => s.session_number === 1)?.srishti_notes || ''
+    setNotes(n)
+  }, [sessions])
 
   const handleNotesChange = (val: string) => {
     setNotes(val)
@@ -528,6 +813,7 @@ function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGe
 
   const handleGenerateS1 = async () => {
     setGeneratingFor(response.id)
+    setInnerTab('s1')
     try {
       const res = await fetch(`/api/sessions/${response.id}`, {
         method: 'POST',
@@ -551,11 +837,7 @@ function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGe
       const res = await fetch(`/api/sessions/${response.id}/regenerate-whatsapp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_number: sessionNum,
-          current_message: session.whatsapp_message,
-          response,
-        }),
+        body: JSON.stringify({ session_number: sessionNum, current_message: session.whatsapp_message, response }),
       })
       if (res.ok) {
         const { whatsapp_message } = await res.json() as { whatsapp_message: string }
@@ -576,53 +858,85 @@ function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGe
     })
     if (res.ok) {
       const newSession = await res.json() as Session
-      // Update current session's transcript status + add new session
       const updatedSessions = sessions.map(s =>
         s.session_number === sessionNum ? { ...s, transcript, status: 'transcript_added' as const } : s
       )
       onSessionsUpdate([...updatedSessions, newSession])
+      // Auto-advance to next session tab
+      setTimeout(() => setInnerTab(sessionNum === 1 ? 's2' : 's3'), 400)
     }
   }
 
-  return (
-    <div className="journey-wrap">
-      {/* Archetype */}
-      {archetype && (
-        <div className="archetype-block">
-          <div className="archetype-label">Who they are</div>
-          <div className="archetype-text">{archetype}</div>
-        </div>
-      )}
+  const s1Done = !!session1?.transcript
+  const s2Done = !!session2?.transcript
 
-      {/* Your context / notes */}
-      <div className="notes-block">
-        <div className="notes-label">Your context</div>
-        <textarea
-          className="notes-textarea"
-          placeholder="Add your own context about this person — things the form didn't capture, impressions from calls, relevant background..."
-          value={notes}
-          onChange={e => handleNotesChange(e.target.value)}
-        />
-        {notesSaving && <div className="notes-saving">Saving...</div>}
+  const tabMeta: { id: JourneyInnerTab; label: string; locked: boolean; hasPlan: boolean }[] = [
+    { id: 'archetype', label: 'Archetype', locked: false, hasPlan: false },
+    { id: 's1', label: 'Session 1', locked: false, hasPlan: !!session1 },
+    { id: 's2', label: 'Session 2', locked: !s1Done, hasPlan: !!session2 },
+    { id: 's3', label: 'Session 3', locked: !s2Done, hasPlan: !!session3 },
+  ]
+
+  return (
+    <div className="journey-tabbed">
+      {/* Inner tab bar */}
+      <div className="journey-inner-tabs">
+        {tabMeta.map(t => (
+          <button
+            key={t.id}
+            className={`journey-inner-tab${innerTab === t.id ? ' active' : ''}${t.locked ? ' locked' : ''}`}
+            onClick={() => !t.locked && setInnerTab(t.id)}
+            disabled={t.locked}
+          >
+            {t.locked && <span className="jtab-lock">◎</span>}
+            {t.label}
+            {t.hasPlan && !t.locked && (
+              <span className={`jtab-dot${
+                t.id === 's1' && s1Done ? ' done' :
+                t.id === 's2' && s2Done ? ' done' :
+                t.id === 's3' && session3?.status === 'complete' ? ' done' :
+                ' ready'
+              }`} />
+            )}
+          </button>
+        ))}
       </div>
 
-      {/* Three session blocks */}
-      {([1, 2, 3] as const).map(num => (
-        <SessionBlock
-          key={num}
-          sessionNum={num}
-          session={[session1, session2, session3][num - 1]}
-          previousSession={num > 1 ? [session1, session2][num - 2] : undefined}
-          response={response}
-          onTranscriptSubmit={handleTranscriptSubmit}
-          onGeneratePlan={handleGenerateS1}
-          onRegenerateWhatsapp={() => handleRegenerateWhatsapp(num)}
-          isGenerating={generatingFor === response.id}
-          regeneratingWhatsapp={!!regeneratingWhatsapp[num]}
-          transcriptDraft={transcriptDrafts[num] || ''}
-          onTranscriptDraftChange={val => setTranscriptDrafts(prev => ({ ...prev, [num]: val }))}
-        />
-      ))}
+      {/* Tab content */}
+      <div className="journey-inner-content">
+        {innerTab === 'archetype' && (
+          <ArchetypeTab
+            response={response}
+            sessions={sessions}
+            notes={notes}
+            notesSaving={notesSaving}
+            onNotesChange={handleNotesChange}
+          />
+        )}
+        {(['s1', 's2', 's3'] as const).map((tabId, i) => {
+          const num = (i + 1) as 1 | 2 | 3
+          const session = [session1, session2, session3][i]
+          const nextSession = [session2, session3, undefined][i]
+          const isLocked = tabMeta[i + 1].locked
+          return innerTab === tabId ? (
+            <SessionTabContent
+              key={tabId}
+              sessionNum={num}
+              session={session}
+              nextSession={nextSession}
+              response={response}
+              isLocked={isLocked}
+              isGenerating={generatingFor === response.id && !session}
+              regeneratingWhatsapp={!!regeneratingWhatsapp[num]}
+              transcriptDraft={transcriptDrafts[num] || ''}
+              onTranscriptDraftChange={val => setTranscriptDrafts(prev => ({ ...prev, [num]: val }))}
+              onGeneratePlan={handleGenerateS1}
+              onTranscriptSubmit={handleTranscriptSubmit}
+              onRegenerateWhatsapp={() => handleRegenerateWhatsapp(num)}
+            />
+          ) : null
+        })}
+      </div>
     </div>
   )
 }
