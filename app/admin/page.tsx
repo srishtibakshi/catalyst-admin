@@ -630,6 +630,21 @@ function SessionTabContent({
         </div>
       )}
 
+      {/* Calendly booking link */}
+      {session && plan && (
+        <div className="calendly-block">
+          <a
+            href={CALENDLY_LINKS[sessionNum]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="calendly-btn"
+          >
+            <span className="calendly-icon">📅</span>
+            Book Session {sessionNum} on Calendly
+          </a>
+        </div>
+      )}
+
       {/* No parseable plan */}
       {session && !plan && !isGenerating && (
         <div style={{ padding: '20px 0', fontSize: 13, color: 'var(--muted)' }}>
@@ -998,6 +1013,12 @@ ${transcript1 ? `### Session 1 Transcript\n${transcript1}\n` : ''}
 ${plan2 ? `### Session 2 Plan (Generated)\nArchetype: ${plan2.archetype}\nOverview: ${plan2.session_overview}\nTools: ${plan2.knowledge.tools.map(t => t.name).join(', ')}\n` : ''}
 ${transcript2 ? `### Session 2 Transcript\n${transcript2}\n` : ''}
 ${plan3 ? `### Session 3 Plan (Generated)\nOverview: ${plan3.session_overview}\n` : ''}`
+}
+
+const CALENDLY_LINKS: Record<1 | 2 | 3, string> = {
+  1: 'https://calendly.com/anmoluxplorer/ai-discovery-session-with-anmol-60min-clone',
+  2: 'https://calendly.com/anmoluxplorer/going-deeper-with-ai-session-with-anmol-60min-clone',
+  3: 'https://calendly.com/anmoluxplorer/30min',
 }
 
 const QUICK_PROMPTS = [

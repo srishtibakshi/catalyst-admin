@@ -1635,6 +1635,33 @@ html, body {
   white-space: pre-wrap;
 }
 
+/* ── Calendly block ──────────────────────────────────────── */
+
+.calendly-block {
+  margin: 4px 0 20px;
+}
+
+.calendly-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: oklch(42% 0.1 240 / 12%);
+  border: 1px solid oklch(60% 0.1 240 / 30%);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: oklch(72% 0.1 240);
+  text-decoration: none;
+  font-family: var(--font-sans);
+  letter-spacing: .01em;
+  transition: background .15s var(--ease-out);
+}
+.calendly-btn:hover {
+  background: oklch(42% 0.1 240 / 20%);
+}
+.calendly-icon { font-size: 14px; }
+
 /* ── Chat Tab ──────────────────────────────────────────── */
 .chat-wrap {
   display: flex;
