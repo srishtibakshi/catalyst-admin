@@ -700,10 +700,26 @@ interface ChatTabProps {
   sessions: Session[]
   messages: ChatMessage[]
   onMessagesChange: (msgs: ChatMessage[]) => void
+  onJourneyUpdated: (notes: string) => void
 }
 
-function ChatTab({ response, sessions, messages, onMessagesChange }: ChatTabProps) {
+function buildSessionSummary(sessions: Session[]): string {
+  if (sessions.length === 0) return 'No sessions started yet.'
+  return sessions.map(s => {
+    const statusMap: Record<string, string> = {
+      generating: 'plan generating',
+      plan_ready: 'plan ready, not yet delivered',
+      transcript_added: 'session delivered, transcript logged',
+      complete: 'complete',
+    }
+    return `Session ${s.session_number}: ${statusMap[s.status] || s.status}`
+  }).join('\n')
+}
+
+function ChatTab({ response, sessions, messages, onMessagesChange, onJourneyUpdated }: ChatTabProps) {
   const [input, setInput] = useState('')
+  const [updatingJourney, setUpdatingJourney] = useState(false)
+  const [journeyUpdated, setJourneyUpdated] = useState(false)
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -753,6 +769,30 @@ function ChatTab({ response, sessions, messages, onMessagesChange }: ChatTabProp
     }
   }
 
+  const handleUpdateJourney = async () => {
+    if (!messages.length || updatingJourney) return
+    setUpdatingJourney(true)
+    try {
+      const res = await fetch(`/api/sessions/${response.id}/update-from-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chatMessages: messages,
+          clientContext: buildClientContext(response, sessions),
+          sessionSummary: buildSessionSummary(sessions),
+        }),
+      })
+      if (res.ok) {
+        const data = await res.json() as { notes: string }
+        onJourneyUpdated(data.notes)
+        setJourneyUpdated(true)
+        setTimeout(() => setJourneyUpdated(false), 4000)
+      }
+    } finally {
+      setUpdatingJourney(false)
+    }
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -785,6 +825,18 @@ function ChatTab({ response, sessions, messages, onMessagesChange }: ChatTabProp
             </div>
           ))}
           <div ref={bottomRef} />
+        </div>
+      )}
+
+      {messages.length > 1 && (
+        <div className="chat-actions-bar">
+          <button
+            className={`chat-update-journey${journeyUpdated ? ' done' : ''}`}
+            onClick={handleUpdateJourney}
+            disabled={updatingJourney || streaming}
+          >
+            {updatingJourney ? '⟳ Updating…' : journeyUpdated ? '✓ Journey updated' : '↗ Apply to journey notes'}
+          </button>
         </div>
       )}
 
@@ -1192,6 +1244,16 @@ export default function AdminDashboard() {
                   sessions={selectedSessions}
                   messages={chatMap[selected.id] || []}
                   onMessagesChange={msgs => setChatMap(prev => ({ ...prev, [selected.id]: msgs }))}
+                  onJourneyUpdated={notes => {
+                    // Update session 1 notes in sessionsMap so Journey tab reflects it immediately
+                    setSessionsMap(prev => {
+                      const existing = prev[selected.id] || []
+                      const updated = existing.map(s =>
+                        s.session_number === 1 ? { ...s, srishti_notes: notes } : s
+                      )
+                      return { ...prev, [selected.id]: updated }
+                    })
+                  }}
                 />
               )}
             </div>
