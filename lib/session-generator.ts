@@ -250,11 +250,24 @@ export async function generateSessionPlan(
     throw new Error('Failed to generate session plan from Claude')
   }
 
-  // Strip any accidental markdown fences
-  const cleaned = rawText
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/i, '')
-    .trim()
+  // Extract JSON robustly: find the outermost { ... } block
+  function extractJson(text: string): string {
+    // Strip markdown fences first
+    const stripped = text
+      .replace(/^```(?:json)?\s*/im, '')
+      .replace(/\s*```\s*$/im, '')
+      .trim()
+
+    // Find the first { and the last } — handles preamble text before the JSON
+    const start = stripped.indexOf('{')
+    const end = stripped.lastIndexOf('}')
+    if (start !== -1 && end !== -1 && end > start) {
+      return stripped.slice(start, end + 1)
+    }
+    return stripped
+  }
+
+  const cleaned = extractJson(rawText)
 
   try {
     const plan = JSON.parse(cleaned) as SessionPlan
@@ -264,7 +277,7 @@ export async function generateSessionPlan(
     // Graceful fallback
     const name = firstName(response.respondent_name)
     return {
-      archetype: `Plan generation encountered an issue. Raw response stored for manual review.\n\n${rawText.slice(0, 500)}`,
+      archetype: `Unable to generate detailed archetype — please regenerate this plan.`,
       session_overview: `Session ${sessionNumber} plan for ${name} — needs manual review`,
       discovery: {
         opening_line: `Hi ${name}, great to meet you. I've been going through your form answers and I'd love to start by understanding your world a bit better.`,

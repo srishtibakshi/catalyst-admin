@@ -97,3 +97,69 @@ export async function POST(
     return NextResponse.json({ error: 'Plan generation failed' }, { status: 500 })
   }
 }
+
+// PUT: Force-regenerate Session 1 plan (overwrites existing)
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: { responseId: string } }
+) {
+  const { responseId } = params
+
+  let body: { response: IntakeResponse }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const { response } = body
+
+  try {
+    const plan = await generateSessionPlan(response, 1)
+
+    // Upsert: update if exists, insert if not
+    const { data: existing } = await supabaseAdmin
+      .from('sessions')
+      .select('id')
+      .eq('response_id', responseId)
+      .eq('session_number', 1)
+      .single()
+
+    let result
+    if (existing) {
+      const { data, error } = await supabaseAdmin
+        .from('sessions')
+        .update({
+          archetype: plan.archetype,
+          plan: JSON.stringify(plan),
+          whatsapp_message: plan.whatsapp_message,
+          status: 'plan_ready',
+        })
+        .eq('id', existing.id)
+        .select()
+        .single()
+      if (error) throw error
+      result = data
+    } else {
+      const { data, error } = await supabaseAdmin
+        .from('sessions')
+        .insert({
+          response_id: responseId,
+          session_number: 1,
+          archetype: plan.archetype,
+          plan: JSON.stringify(plan),
+          whatsapp_message: plan.whatsapp_message,
+          status: 'plan_ready',
+        })
+        .select()
+        .single()
+      if (error) throw error
+      result = data
+    }
+
+    return NextResponse.json(result)
+  } catch (err) {
+    console.error('Force regenerate error:', err)
+    return NextResponse.json({ error: 'Plan regeneration failed' }, { status: 500 })
+  }
+}

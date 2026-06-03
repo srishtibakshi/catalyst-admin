@@ -90,10 +90,23 @@ function exportCSV(data: IntakeResponse[]) {
   URL.revokeObjectURL(url)
 }
 
+function extractJsonFromText(text: string): string {
+  const stripped = text
+    .replace(/^```(?:json)?\s*/im, '')
+    .replace(/\s*```\s*$/im, '')
+    .trim()
+  const start = stripped.indexOf('{')
+  const end = stripped.lastIndexOf('}')
+  if (start !== -1 && end !== -1 && end > start) {
+    return stripped.slice(start, end + 1)
+  }
+  return stripped
+}
+
 function parsePlan(planStr: string | null): SessionPlan | null {
   if (!planStr) return null
   try {
-    return JSON.parse(planStr) as SessionPlan
+    return JSON.parse(extractJsonFromText(planStr)) as SessionPlan
   } catch {
     return null
   }
@@ -543,6 +556,7 @@ interface SessionTabContentProps {
   transcriptDraft: string
   onTranscriptDraftChange: (val: string) => void
   onGeneratePlan: () => Promise<void>
+  onForceRegenerate?: () => Promise<void>
   onTranscriptSubmit: (sessionNum: 1 | 2, transcript: string) => Promise<void>
   onRegenerateWhatsapp: () => Promise<void>
 }
@@ -550,7 +564,7 @@ interface SessionTabContentProps {
 function SessionTabContent({
   sessionNum, session, nextSession, response, isLocked, isGenerating,
   regeneratingWhatsapp, transcriptDraft, onTranscriptDraftChange,
-  onGeneratePlan, onTranscriptSubmit, onRegenerateWhatsapp,
+  onGeneratePlan, onForceRegenerate, onTranscriptSubmit, onRegenerateWhatsapp,
 }: SessionTabContentProps) {
   const [submittingTranscript, setSubmittingTranscript] = useState(false)
   const plan = parsePlan(session?.plan || null)
@@ -605,9 +619,33 @@ function SessionTabContent({
         </div>
       )}
 
+      {/* Plan missing / corrupt — show regenerate option */}
+      {session && !plan && !isGenerating && sessionNum === 1 && onForceRegenerate && (
+        <div className="generate-plan-cta">
+          <p className="generate-plan-hint">
+            The plan could not be parsed — it may contain an error from a previous generation attempt. Regenerate to get a fresh, detailed plan.
+          </p>
+          <button className="generate-btn" onClick={onForceRegenerate}>
+            ↺ Regenerate Plan
+          </button>
+        </div>
+      )}
+
       {/* Plan content */}
       {session && plan && (
         <div className="session-plan-wrap">
+          {/* Regenerate option (subtle) */}
+          {sessionNum === 1 && onForceRegenerate && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+              <button
+                className="regen-btn"
+                onClick={onForceRegenerate}
+                title="Re-run Claude to generate a fresh, more detailed plan"
+              >
+                ↺ Regenerate Plan
+              </button>
+            </div>
+          )}
           <PlanDisplay plan={plan} />
 
           {/* WhatsApp block */}
@@ -847,6 +885,24 @@ function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGe
     }
   }
 
+  const handleForceRegenerateS1 = async () => {
+    setGeneratingFor(response.id)
+    setInnerTab('s1')
+    try {
+      const res = await fetch(`/api/sessions/${response.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response }),
+      })
+      if (res.ok) {
+        const updatedSession = await res.json() as Session
+        onSessionsUpdate([updatedSession, ...sessions.filter(s => s.session_number !== 1)])
+      }
+    } finally {
+      setGeneratingFor(null)
+    }
+  }
+
   const handleRegenerateWhatsapp = async (sessionNum: 1 | 2 | 3) => {
     const session = sessions.find(s => s.session_number === sessionNum)
     if (!session?.whatsapp_message) return
@@ -949,6 +1005,7 @@ function JourneyTab({ response, sessions, onSessionsUpdate, generatingFor, setGe
               transcriptDraft={transcriptDrafts[num] || ''}
               onTranscriptDraftChange={val => setTranscriptDrafts(prev => ({ ...prev, [num]: val }))}
               onGeneratePlan={handleGenerateS1}
+              onForceRegenerate={num === 1 ? handleForceRegenerateS1 : undefined}
               onTranscriptSubmit={handleTranscriptSubmit}
               onRegenerateWhatsapp={() => handleRegenerateWhatsapp(num)}
             />
