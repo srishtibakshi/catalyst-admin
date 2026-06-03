@@ -757,26 +757,30 @@ function ArchetypeTab({
   const session2 = sessions.find(s => s.session_number === 2)
   const session3 = sessions.find(s => s.session_number === 3)
 
-  // Resolve archetype — the DB column may contain raw preamble+JSON from a failed parse;
-  // extract the actual archetype string by trying to parse JSON within it.
+  // Resolve archetype — the DB column (or plan-derived value) may contain raw preamble+JSON.
+  // Extract the actual archetype text, returning null if it's an error/preamble string.
   function resolveArchetype(raw: string | null): string | null {
     if (!raw) return null
-    // If it looks clean (no JSON object inside), return as-is
-    if (!raw.includes('{')) return raw
-    // Try to extract JSON and get the archetype field from it
-    try {
-      const parsed = JSON.parse(extractJsonFromText(raw)) as { archetype?: string }
-      if (parsed.archetype) return parsed.archetype
-    } catch {
-      // fall through
+    // Reject known error preambles (from anywhere in the chain)
+    if (
+      raw.startsWith('Plan generation encountered') ||
+      raw.startsWith('Unable to generate') ||
+      raw.includes('Raw response stored for manual review')
+    ) return null
+    // If it contains a JSON object, try to extract the archetype field from inside it
+    if (raw.includes('{')) {
+      try {
+        const parsed = JSON.parse(extractJsonFromText(raw)) as { archetype?: string }
+        if (parsed.archetype) return resolveArchetype(parsed.archetype)
+      } catch {
+        // fall through — may just be a string with a curly brace in it
+      }
     }
-    // If it starts with an error preamble, return null so we show the "regenerate" prompt
-    if (raw.startsWith('Plan generation encountered') || raw.startsWith('Unable to generate')) return null
     return raw
   }
   const archetype =
     resolveArchetype(session1?.archetype || null) ||
-    parsePlan(session1?.plan || null)?.archetype ||
+    resolveArchetype(parsePlan(session1?.plan || null)?.archetype || null) ||
     null
 
   const stageLabel = (() => {
