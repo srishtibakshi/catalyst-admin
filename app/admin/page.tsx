@@ -757,7 +757,27 @@ function ArchetypeTab({
   const session2 = sessions.find(s => s.session_number === 2)
   const session3 = sessions.find(s => s.session_number === 3)
 
-  const archetype = session1?.archetype || parsePlan(session1?.plan || null)?.archetype || null
+  // Resolve archetype — the DB column may contain raw preamble+JSON from a failed parse;
+  // extract the actual archetype string by trying to parse JSON within it.
+  function resolveArchetype(raw: string | null): string | null {
+    if (!raw) return null
+    // If it looks clean (no JSON object inside), return as-is
+    if (!raw.includes('{')) return raw
+    // Try to extract JSON and get the archetype field from it
+    try {
+      const parsed = JSON.parse(extractJsonFromText(raw)) as { archetype?: string }
+      if (parsed.archetype) return parsed.archetype
+    } catch {
+      // fall through
+    }
+    // If it starts with an error preamble, return null so we show the "regenerate" prompt
+    if (raw.startsWith('Plan generation encountered') || raw.startsWith('Unable to generate')) return null
+    return raw
+  }
+  const archetype =
+    resolveArchetype(session1?.archetype || null) ||
+    parsePlan(session1?.plan || null)?.archetype ||
+    null
 
   const stageLabel = (() => {
     if (session3?.transcript) return 'Journey complete'
